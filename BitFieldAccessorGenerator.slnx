@@ -1,5 +1,5 @@
 <Solution>
   <Project Path="BitFieldAccessorGenerator/BitFieldAccessorGenerator.csproj" />
-  <Project Path="libBitAccessorGenerator/libBitAccessorGenerator.csproj" />
+  <Project Path="libBitFieldAccessorGenerator/libBitFieldAccessorGenerator.csproj" />
   <Project Path="libBitFieldAccessorGeneratorSample/libBitFieldAccessorGeneratorSample.csproj" />
 </Solution>

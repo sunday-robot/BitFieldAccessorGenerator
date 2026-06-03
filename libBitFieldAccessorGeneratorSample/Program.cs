@@ -1,6 +1,4 @@
-﻿using libBitAccessorGenerator;
-
-namespace libBitFieldAccessorGeneratorSample;
+﻿namespace libBitFieldAccessorGeneratorSample;
 
 internal class Program
 {

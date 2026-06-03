@@ -1,7 +1,4 @@
-﻿using libBitAccessorGenerator;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using libBitFieldAccessorGenerator;
 
 namespace libBitFieldAccessorGeneratorSample;
 

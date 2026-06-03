@@ -1,4 +1,4 @@
-﻿using libBitAccessorGenerator;
+﻿using libBitFieldAccessorGenerator;
 
 namespace BitFieldAccessorGenerator;
 

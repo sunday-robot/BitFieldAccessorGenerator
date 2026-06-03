@@ -1,4 +1,4 @@
-﻿namespace libBitAccessorGenerator;
+﻿namespace libBitFieldAccessorGenerator;
 
 public static class Validator
 {

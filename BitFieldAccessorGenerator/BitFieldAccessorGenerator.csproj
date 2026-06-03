@@ -8,7 +8,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\libBitAccessorGenerator\libBitAccessorGenerator.csproj" />
+	  <ProjectReference Include="..\libBitFieldAccessorGenerator\libBitFieldAccessorGenerator.csproj" />
 	</ItemGroup>
 
 </Project>

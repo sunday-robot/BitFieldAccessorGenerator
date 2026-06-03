@@ -1,4 +1,4 @@
-﻿namespace libBitAccessorGenerator;
+﻿namespace libBitFieldAccessorGenerator;
 
 [Serializable]
 public class BitFieldDefinitionErrorException : Exception

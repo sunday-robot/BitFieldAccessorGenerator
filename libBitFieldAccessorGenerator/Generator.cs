@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace libBitAccessorGenerator;
+namespace libBitFieldAccessorGenerator;
 
 public static class Generator
 {
