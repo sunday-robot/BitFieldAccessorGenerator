@@ -1,0 +1,6 @@
+Test, BigEndian
+Bf1,2
+, 2
+Bf2, 3
+Bf3, 2
+,7

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "BitFieldAccessorGenerator": {
+      "commandName": "Project",
+      "commandLineArgs": "BitFieldAccessorGenerator.TestOutput ..\\Test.txt",
+      "workingDirectory": ".\\TestOutput"
+    }
+  }
+}
