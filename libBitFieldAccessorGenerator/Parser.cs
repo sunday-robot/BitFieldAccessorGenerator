@@ -2,18 +2,17 @@
 
 public static class Parser
 {
-    public static (string bitFieldAccessorClassName, bool isBigEndian, List<(string bitFieldName, int bitWidth)> fields)
+    public static (string bitFieldAccessorClassName, bool isBigEndian, string description, List<(int width, string name, string description)> fields)
         Parse(TextReader tr)
     {
         var headerLine = ReadLine(tr)
             ?? throw new FormatException("クラス名行が存在しません。");
-        var (className, isBigEndian) = ParseHeader(headerLine);
-        var fields = new List<(string bitFieldName, int bitWidth)>();
+        var (className, isBigEndian, description) = ParseHeader(headerLine);
+        var fields = new List<(int width, string name, string description)>();
         string? line;
         while ((line = ReadLine(tr)) != null)
             fields.Add(ParseField(line));
-
-        return (className, isBigEndian, fields);
+        return (className, isBigEndian, description, fields);
     }
 
     static string? ReadLine(TextReader tr)
@@ -30,43 +29,77 @@ public static class Parser
         }
     }
 
-    static (string className, bool isBigEndian) ParseHeader(string line)
+    static (string className, bool isBigEndian, string description) ParseHeader(string line)
     {
+        string className;
+        string endian;
+        string description;
+
         var parts = SplitCsv(line);
+        switch (parts.Length)
+        {
+            case 2:
+                className = parts[0];
+                endian = parts[1];
+                description = "";
+                break;
+            case 3:
+                className = parts[0];
+                endian = parts[1];
+                description = parts[2];
+                break;
+            default:
+                throw new FormatException($"クラス名行の形式が不正です: {line}");
+        }
 
-        string className = parts[0];
-        string endian = parts[1].ToLowerInvariant();
-
-        bool isBigEndian = endian switch
+        bool isBigEndian = endian.ToLowerInvariant() switch
         {
             "bigendian" => true,
             "littleendian" => false,
             _ => throw new FormatException($"エンディアン指定が不正です: {parts[1]}")
         };
 
-        return (className, isBigEndian);
+        return (className, isBigEndian, description);
     }
 
-    static (string bitFieldName, int bitWidth) ParseField(string line)
+    static (int width, string name, string description) ParseField(string line)
     {
+        int width;
+        string name;
+        string description;
+
         var parts = SplitCsv(line);
+        switch (parts.Length)
+        {
+            case 1:
+                width = int.Parse(parts[0]);
+                name = "";
+                description = "";
+                break;
+            case 2:
+                width = int.Parse(parts[0]);
+                name = parts[1];
+                description = "";
+                break;
+            case 3:
+                width = int.Parse(parts[0]);
+                name = parts[1];
+                description = parts[2];
+                break;
+            default:
+                throw new FormatException($"フィールド行の形式が不正です: {line}");
+        }
 
-        string name = parts[0]; // 空なら reserved
-        int width = int.Parse(parts[1]);
-
-        return (name, width);
+        return (width, name, description);
     }
 
     static string[] SplitCsv(string line)
     {
-        var parts = line.Split(',');
-        if (parts.Length != 2)
-            throw new FormatException($"CSV形式が不正です: {line}");
-
-        return
-        [
-            parts[0].Trim(),
-            parts[1].Trim()
-        ];
+        var columns = line.Split(',');
+        for (int i = 0; i < columns.Length; i++)
+        {
+            columns[i] = columns[i].Trim();
+        }
+        return columns;
     }
 }

@@ -25,8 +25,8 @@ internal class Program
     static void Generate(string nameSpace, string bitFieldDefintionFilePath)
     {
         var sr = new StreamReader(bitFieldDefintionFilePath);
-        var (bitFieldAccessorClassName, isBigEndian, fields) = Parser.Parse(sr);
-        var s = Generator.Generate(nameSpace, bitFieldAccessorClassName, isBigEndian, fields);
+        var (bitFieldAccessorClassName, isBigEndian, description, fields) = Parser.Parse(sr);
+        var s = Generator.Generate(nameSpace, bitFieldAccessorClassName, isBigEndian, description, fields);
         File.WriteAllText(bitFieldAccessorClassName + ".cs", s);
     }
 }

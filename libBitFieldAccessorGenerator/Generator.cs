@@ -12,7 +12,7 @@ public static class Generator
         sb.AppendLine($"{indent}/// </summary>");
     }
 
-    public static string Generate(string namespaceName, string className, bool isBigEndian, IReadOnlyList<(string bitFieldName, int bitWidth)> fieldDefinitions)
+    public static string Generate(string namespaceName, string className, bool isBigEndian, string description, IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
     {
         Validator.Validate(fieldDefinitions);
 
@@ -20,7 +20,7 @@ public static class Generator
         sb.AppendLine($"namespace {namespaceName};");
         sb.AppendLine();
 
-        var totalBits = fieldDefinitions.Sum(f => f.bitWidth);
+        var totalBits = fieldDefinitions.Sum(f => f.width);
         if (isBigEndian)
             PrintSummery(sb, "", $"{totalBits} bits", "big endian");
         else
@@ -33,24 +33,31 @@ public static class Generator
         foreach (var fieldDefinition in fieldDefinitions)
         {
             GenerateField(sb, isBigEndian, bitIndex, fieldDefinition);
-            bitIndex += fieldDefinition.bitWidth;
+            bitIndex += fieldDefinition.width;
         }
 
         sb.AppendLine("}");
         return sb.ToString();
     }
 
-    static void GenerateField(StringBuilder sb, bool isBigEndian, int bitIndex, (string bitFieldName, int bitWidth) fieldDefinition)
+    static void GenerateField(StringBuilder sb, bool isBigEndian, int bitIndex, (int width, string name, string description) fieldDefinition)
     {
         sb.AppendLine();
-        if (fieldDefinition.bitFieldName.Length == 0)
+        if (fieldDefinition.name.Length == 0)
         {
-            sb.AppendLine($"    // reserved, bitWidth:{fieldDefinition.bitWidth}");
+            sb.AppendLine($"    // reserved, offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
             return;
         }
 
-        PrintSummery(sb, "    ", $"bitWidth:{fieldDefinition.bitWidth}");
-        sb.AppendLine($"    public uint {fieldDefinition.bitFieldName}");
+        var type = fieldDefinition.width switch
+        {
+            <= 8 => "byte",
+            <= 16 => "ushort",
+            _ => "uint",
+        };
+
+        PrintSummery(sb, "    ", $"offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
+        sb.AppendLine($"    public {type} {fieldDefinition.name}");
         sb.AppendLine("    {");
         GenerateGetter(sb, isBigEndian, bitIndex, fieldDefinition);
         GenerateSetter(sb, isBigEndian, bitIndex, fieldDefinition);
@@ -76,9 +83,9 @@ public static class Generator
         StringBuilder sb,
         bool isBigEndian,
         int bitIndex,
-        (string bitFieldName, int bitWidth) fieldDefinition)
+        (int width, string name, string description) fieldDefinition)
     {
-        int bitWidth = fieldDefinition.bitWidth;
+        int bitWidth = fieldDefinition.width;
 
         int startByte = bitIndex >> 3;
         int endByte = (bitIndex + bitWidth - 1) >> 3;
@@ -204,9 +211,9 @@ public static class Generator
         StringBuilder sb,
         bool isBigEndian,
         int bitIndex,
-        (string bitFieldName, int bitWidth) fieldDefinition)
+        (int width, string name, string description) fieldDefinition)
     {
-        int bitWidth = fieldDefinition.bitWidth;
+        int bitWidth = fieldDefinition.width;
 
         int startByte = bitIndex >> 3;
         int endByte = (bitIndex + bitWidth - 1) >> 3;
