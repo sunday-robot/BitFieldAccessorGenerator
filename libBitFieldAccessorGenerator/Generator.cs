@@ -1,33 +1,19 @@
-﻿using System.Text;
+﻿using System.Reflection.Metadata;
+using System.Text;
 
 namespace libBitFieldAccessorGenerator;
 
 public static class Generator
 {
-    static void PrintSummery(StringBuilder sb, string indent, params string[] summaries)
-    {
-        sb.AppendLine($"{indent}/// <summary>");
-        foreach (var summary in summaries)
-            sb.AppendLine($"{indent}/// {summary}");
-        sb.AppendLine($"{indent}/// </summary>");
-    }
-
     public static string Generate(string namespaceName, string className, bool isBigEndian, string description, IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
     {
         Validator.Validate(fieldDefinitions);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"namespace {namespaceName};");
-        sb.AppendLine();
 
-        var totalBits = fieldDefinitions.Sum(f => f.width);
-        if (isBigEndian)
-            PrintSummery(sb, "", $"{totalBits} bits", "big endian");
-        else
-            PrintSummery(sb, "", $"{totalBits} bits", "little endian");
-        sb.AppendLine($"public sealed class {className}(byte[] data)");
-        sb.AppendLine("{");
-        sb.AppendLine("    readonly byte[] _data = data;");
+        GenerateNameSpace(sb, namespaceName);
+        GenerateClassSummary(sb, isBigEndian, description, fieldDefinitions);
+        GenerateClassHeader(sb, className);
 
         int bitIndex = 0;
         foreach (var fieldDefinition in fieldDefinitions)
@@ -37,31 +23,77 @@ public static class Generator
         }
 
         sb.AppendLine("}");
+
         return sb.ToString();
+    }
+
+    static void GenerateNameSpace(StringBuilder sb, string namespaceName)
+    {
+        sb.AppendLine($"namespace {namespaceName};");
+        sb.AppendLine();
+    }
+
+    static void GenerateClassSummary(StringBuilder sb, bool isBigEndian, string description, IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
+    {
+        var totalBits = fieldDefinitions.Sum(f => f.width);
+        if (isBigEndian)
+            PrintSummery(sb, "", $"{totalBits} bits", "big endian", description);
+        else
+            PrintSummery(sb, "", $"{totalBits} bits", "little endian", description);
+    }
+
+    static void GenerateClassHeader(StringBuilder sb, string className)
+    {
+        sb.AppendLine($"public sealed class {className}(byte[] data)");
+        sb.AppendLine("{");
+        sb.AppendLine("    readonly byte[] _data = data;");
     }
 
     static void GenerateField(StringBuilder sb, bool isBigEndian, int bitIndex, (int width, string name, string description) fieldDefinition)
     {
         sb.AppendLine();
+
         if (fieldDefinition.name.Length == 0)
         {
-            sb.AppendLine($"    // reserved, offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
+            GenerateReserverdFieldComment(sb, bitIndex, fieldDefinition);
             return;
         }
 
-        var type = fieldDefinition.width switch
+        GenerateFieldSummary(sb, bitIndex, fieldDefinition);
+        sb.AppendLine($"    public {GetFieldType(fieldDefinition.width)} {fieldDefinition.name}");
+        sb.AppendLine("    {");
+        GenerateGetter(sb, isBigEndian, bitIndex, fieldDefinition);
+        GenerateSetter(sb, isBigEndian, bitIndex, fieldDefinition);
+        sb.AppendLine("    }");
+    }
+
+    static void GenerateReserverdFieldComment(StringBuilder sb, int bitIndex, (int width, string name, string description) fieldDefinition)
+    {
+        sb.AppendLine($"    // reserved, offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
+    }
+
+    static void GenerateFieldSummary(StringBuilder sb, int bitIndex, (int width, string name, string description) fieldDefinition)
+    {
+        PrintSummery(sb, "    ", $"offset:{bitIndex / 8}.{bitIndex % 8}", $"bitWidth:{fieldDefinition.width}", fieldDefinition.description);
+    }
+
+    static string GetFieldType(int bitWidth)
+    {
+        return bitWidth switch
         {
             <= 8 => "byte",
             <= 16 => "ushort",
             _ => "uint",
         };
+    }
 
-        PrintSummery(sb, "    ", $"offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
-        sb.AppendLine($"    public {type} {fieldDefinition.name}");
-        sb.AppendLine("    {");
-        GenerateGetter(sb, isBigEndian, bitIndex, fieldDefinition);
-        GenerateSetter(sb, isBigEndian, bitIndex, fieldDefinition);
-        sb.AppendLine("    }");
+    static void PrintSummery(StringBuilder sb, string indent, params string[] summaries)
+    {
+        sb.AppendLine($"{indent}/// <summary>");
+        foreach (var summary in summaries)
+            if (summary.Length != 0)
+                sb.AppendLine($"{indent}/// {summary}");
+        sb.AppendLine($"{indent}/// </summary>");
     }
 
     private static string MaskBinary8(int bitWidth, int shift)
