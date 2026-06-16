@@ -1,4 +1,5 @@
 Test, BigEndian, テスト
+8, ByteField1
 2, Bf1
 2
 3, Bf2

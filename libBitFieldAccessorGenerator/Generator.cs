@@ -1,23 +1,17 @@
-﻿using System.Reflection.Metadata;
-using System.Text;
+﻿using System.Text;
 
 namespace libBitFieldAccessorGenerator;
 
 public static class Generator
 {
-    // 共通出力メソッドに渡すパラメータ用の構造体
-    private readonly record struct ByteMaskParams(int ByteIndex, string WriteMaskStr, string KeepMaskStr);
     private readonly record struct AccessorTemplateParams(
         string FieldType,
         int StartByte,
         int ByteCount,
-        bool IsSingleByte,
-        int BitOffsetInByte,      // 1バイト用
-        string SingleWriteMask,   // 1バイト用
-        string SingleKeepMask,    // 1バイト用
-        IReadOnlyList<ByteMaskParams> MultiByteMasks, // 複数バイト用
-        int RightShift,           // 複数バイト用
-        IReadOnlyList<int> ByteShifts // 複数バイト用: 各b0, b1...のシフト量
+        bool IsBigEndian,
+        int ShiftAmount,
+        byte StartWriteMask,
+        byte EndWriteMask
     );
 
     public static string Generate(string namespaceName, string className, bool isBigEndian, string description, IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
@@ -76,12 +70,10 @@ public static class Generator
         sb.AppendLine($"    public {GetFieldType(fieldDefinition.width)} {fieldDefinition.name}");
         sb.AppendLine("    {");
 
-        // 1. 各エンディアンのロジックでパラメータを計算
         AccessorTemplateParams p = isBigEndian
             ? CalculateBigEndianParams(bitIndex, fieldDefinition.width)
             : CalculateLittleEndianParams(bitIndex, fieldDefinition.width);
 
-        // 2. 共通の出力メソッドを呼び出す
         GenerateAccessorCode(sb, p);
 
         sb.AppendLine("    }");
@@ -129,49 +121,28 @@ public static class Generator
         {
             int bitOffsetInByte = 8 - bitWidth - (bitIndex & 7);
             return new AccessorTemplateParams(
-                FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsSingleByte: true,
-                BitOffsetInByte: bitOffsetInByte,
-                SingleWriteMask: MaskBinary8(bitWidth, bitOffsetInByte),
-                SingleKeepMask: MaskBinary8Inverse(bitWidth, bitOffsetInByte),
-                MultiByteMasks: [], RightShift: 0, ByteShifts: []
+                FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsBigEndian: true,
+                ShiftAmount: bitOffsetInByte,
+                StartWriteMask: CalculateMask8(bitWidth, bitOffsetInByte), EndWriteMask: 0
             );
         }
 
-        var masks = new List<ByteMaskParams>();
-        var byteShifts = new List<int>();
-        for (int i = 0; i < byteCount; i++)
-        {
-            int byteIndex = startByte + i;
-            int localOffset = 0;
-            int bitsFromThisByte = 8;
+        int startOffset = bitIndex & 7;
+        int bitsFromStartByte = 8 - startOffset;
+        int startMaskVal = (1 << bitsFromStartByte) - 1;
 
-            if (i == 0)
-            {
-                int startOffset = bitIndex & 7;
-                bitsFromThisByte = 8 - startOffset;
-            }
-            else if (i == byteCount - 1)
-            {
-                bitsFromThisByte = (bitIndex + bitWidth) & 7;
-                if (bitsFromThisByte == 0) bitsFromThisByte = 8;
-                localOffset = 8 - bitsFromThisByte;
-            }
+        int bitsFromEndByte = (bitIndex + bitWidth) & 7;
+        if (bitsFromEndByte == 0) bitsFromEndByte = 8;
+        int endLocalOffset = 8 - bitsFromEndByte;
+        int endMaskVal = ((1 << bitsFromEndByte) - 1) << endLocalOffset;
 
-            int maskValue = ((1 << bitsFromThisByte) - 1) << localOffset;
-            string keepMaskStr = "0b" + Convert.ToString((~maskValue) & 0xFF, 2).PadLeft(8, '0').Insert(4, "_") + "u";
-            string writeMaskStr = "0b" + Convert.ToString(maskValue & 0xFF, 2).PadLeft(8, '0').Insert(4, "_") + "u";
-
-            masks.Add(new ByteMaskParams(byteIndex, writeMaskStr, keepMaskStr));
-            byteShifts.Add((byteCount - 1 - i) * 8);
-        }
-
-        int endOffset = (bitIndex + bitWidth) & 7;
-        int rightShift = (endOffset == 0) ? 0 : (8 - endOffset);
+        int rightShift = (bitsFromEndByte == 8) ? 0 : (8 - bitsFromEndByte);
 
         return new AccessorTemplateParams(
-            FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsSingleByte: false,
-            BitOffsetInByte: 0, SingleWriteMask: "", SingleKeepMask: "",
-            MultiByteMasks: masks, RightShift: rightShift, ByteShifts: byteShifts
+            FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsBigEndian: true,
+            ShiftAmount: rightShift,
+            StartWriteMask: (byte)startMaskVal,
+            EndWriteMask: (byte)(endMaskVal & 0xFF)
         );
     }
 
@@ -182,51 +153,29 @@ public static class Generator
         int byteCount = endByte - startByte + 1;
         string fieldType = GetFieldType(bitWidth);
 
+        int startOffset = bitIndex & 7;
+
         if (byteCount == 1)
         {
-            int bitOffsetInByte = bitIndex & 7;
             return new AccessorTemplateParams(
-                FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsSingleByte: true,
-                BitOffsetInByte: bitOffsetInByte,
-                SingleWriteMask: MaskBinary8(bitWidth, bitOffsetInByte),
-                SingleKeepMask: MaskBinary8Inverse(bitWidth, bitOffsetInByte),
-                MultiByteMasks: [], RightShift: 0, ByteShifts: []
+                FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsBigEndian: false,
+                ShiftAmount: startOffset,
+                StartWriteMask: CalculateMask8(bitWidth, startOffset), EndWriteMask: 0
             );
         }
 
-        var masks = new List<ByteMaskParams>();
-        var byteShifts = new List<int>();
-        for (int i = 0; i < byteCount; i++)
-        {
-            int byteIndex = startByte + i;
-            int localOffset = 0;
-            int bitsFromThisByte = 8;
+        int bitsFromStartByte = 8 - startOffset;
+        int startMaskVal = ((1 << bitsFromStartByte) - 1) << startOffset;
 
-            if (i == 0)
-            {
-                localOffset = bitIndex & 7;
-                bitsFromThisByte = 8 - localOffset;
-            }
-            else if (i == byteCount - 1)
-            {
-                bitsFromThisByte = (bitIndex + bitWidth) & 7;
-                if (bitsFromThisByte == 0) bitsFromThisByte = 8;
-            }
-
-            int maskValue = ((1 << bitsFromThisByte) - 1) << localOffset;
-            string keepMaskStr = "0b" + Convert.ToString((~maskValue) & 0xFF, 2).PadLeft(8, '0').Insert(4, "_") + "u";
-            string writeMaskStr = "0b" + Convert.ToString(maskValue & 0xFF, 2).PadLeft(8, '0').Insert(4, "_") + "u";
-
-            masks.Add(new ByteMaskParams(byteIndex, writeMaskStr, keepMaskStr));
-            byteShifts.Add(i * 8);
-        }
-
-        int rightShift = bitIndex & 7;
+        int bitsFromEndByte = (bitIndex + bitWidth) & 7;
+        if (bitsFromEndByte == 0) bitsFromEndByte = 8;
+        int endMaskVal = (1 << bitsFromEndByte) - 1;
 
         return new AccessorTemplateParams(
-            FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsSingleByte: false,
-            BitOffsetInByte: 0, SingleWriteMask: "", SingleKeepMask: "",
-            MultiByteMasks: masks, RightShift: rightShift, ByteShifts: byteShifts
+            FieldType: fieldType, StartByte: startByte, ByteCount: byteCount, IsBigEndian: false,
+            ShiftAmount: startOffset,
+            StartWriteMask: (byte)(startMaskVal & 0xFF),
+            EndWriteMask: (byte)endMaskVal
         );
     }
 
@@ -236,25 +185,32 @@ public static class Generator
 
     private static void GenerateAccessorCode(StringBuilder sb, AccessorTemplateParams p)
     {
+        string startMaskStr = ToBinaryString(p.StartWriteMask);
+        string endMaskStr = ToBinaryString(p.EndWriteMask);
+        string invStartMaskStr = ToBinaryString((byte)~p.StartWriteMask);
+        string invEndMaskStr = ToBinaryString((byte)~p.EndWriteMask);
+
         // --- 1バイトに収まる場合の共通出力 ---
-        if (p.IsSingleByte)
+        if (p.ByteCount == 1)
         {
-            // get
             sb.AppendLine("        get");
             sb.AppendLine("        {");
-            if (p.BitOffsetInByte == 0)
-                sb.AppendLine($"            return ({p.FieldType})(_data[{p.StartByte}] & {p.SingleWriteMask});");
+            if (p.StartWriteMask == 0xFF)
+                sb.AppendLine($"            return _data[{p.StartByte}];");
+            else if (p.ShiftAmount == 0)
+                sb.AppendLine($"            return ({p.FieldType})(_data[{p.StartByte}] & {startMaskStr});");
             else
-                sb.AppendLine($"            return ({p.FieldType})((_data[{p.StartByte}] & {p.SingleWriteMask}) >> {p.BitOffsetInByte});");
+                sb.AppendLine($"            return ({p.FieldType})((_data[{p.StartByte}] & {startMaskStr}) >> {p.ShiftAmount});");
             sb.AppendLine("        }");
 
-            // set
             sb.AppendLine("        set");
             sb.AppendLine("        {");
-            if (p.BitOffsetInByte == 0)
-                sb.AppendLine($"            _data[{p.StartByte}] = (byte)((_data[{p.StartByte}] & {p.SingleKeepMask}) | (value & {p.SingleWriteMask}));");
+            if (p.StartWriteMask == 0xFF)
+                sb.AppendLine($"            _data[{p.StartByte}] = value;");
+            else if (p.ShiftAmount == 0)
+                sb.AppendLine($"            _data[{p.StartByte}] = (byte)((_data[{p.StartByte}] & {invStartMaskStr}) | (value & {startMaskStr}));");
             else
-                sb.AppendLine($"            _data[{p.StartByte}] = (byte)((_data[{p.StartByte}] & {p.SingleKeepMask}) | ((value << {p.BitOffsetInByte}) & {p.SingleWriteMask}));");
+                sb.AppendLine($"            _data[{p.StartByte}] = (byte)((_data[{p.StartByte}] & {invStartMaskStr}) | ((value << {p.ShiftAmount}) & {startMaskStr}));");
             sb.AppendLine("        }");
             return;
         }
@@ -265,61 +221,86 @@ public static class Generator
         sb.AppendLine("        {");
         for (int i = 0; i < p.ByteCount; i++)
         {
-            sb.AppendLine($"            var b{i} = _data[{p.MultiByteMasks[i].ByteIndex}] & {p.MultiByteMasks[i].WriteMaskStr};");
+            int currentByte = p.StartByte + i;
+            if (i == 0 && p.StartWriteMask != 0xFF)
+                sb.AppendLine($"            var b{i} = _data[{currentByte}] & {startMaskStr};");
+            else if (i == p.ByteCount - 1 && p.EndWriteMask != 0xFF)
+                sb.AppendLine($"            var b{i} = _data[{currentByte}] & {endMaskStr};");
+            else
+                sb.AppendLine($"            var b{i} = _data[{currentByte}];");
         }
+
         sb.Append("            var x = ");
         for (int i = 0; i < p.ByteCount; i++)
         {
-            int totalShift = p.ByteShifts[i];
-            if (totalShift == 0) sb.Append($"b{i}");
-            else sb.Append($"(b{i} << {totalShift})");
+            int shift = p.IsBigEndian
+                ? (p.ByteCount - 1 - i) * 8
+                : i * 8;
+
+            if (shift == 0) sb.Append($"b{i}");
+            else sb.Append($"(b{i} << {shift})");
 
             if (i < p.ByteCount - 1) sb.Append(" | ");
         }
         sb.AppendLine(";");
-        if (p.RightShift == 0) sb.AppendLine($"            return ({p.FieldType})x;");
-        else sb.AppendLine($"            return ({p.FieldType})(x >> {p.RightShift});");
+
+        if (p.ShiftAmount != 0) sb.AppendLine($"            return ({p.FieldType})(x >> {p.ShiftAmount});");
+        else sb.AppendLine($"            return ({p.FieldType})x;");
         sb.AppendLine("        }");
 
         // setの生成
         sb.AppendLine("        set");
         sb.AppendLine("        {");
-        if (p.RightShift == 0) sb.AppendLine("            var x = value;");
-        else sb.AppendLine($"            var x = value << {p.RightShift};");
+        if (p.ShiftAmount != 0) sb.AppendLine($"            var x = value << {p.ShiftAmount};");
+        else sb.AppendLine("            var x = value;");
 
         for (int i = 0; i < p.ByteCount; i++)
         {
-            int totalShift = p.ByteShifts[i];
-            if (totalShift == 0) sb.AppendLine($"            var b{i} = x;");
-            else sb.AppendLine($"            var b{i} = x >> {totalShift};");
+            int shift = p.IsBigEndian
+                ? (p.ByteCount - 1 - i) * 8
+                : i * 8;
+
+            if (shift == 0) sb.AppendLine($"            var b{i} = x;");
+            else sb.AppendLine($"            var b{i} = x >> {shift};");
         }
+
         for (int i = 0; i < p.ByteCount; i++)
         {
-            sb.AppendLine($"            _data[{p.MultiByteMasks[i].ByteIndex}] = (byte)((_data[{p.MultiByteMasks[i].ByteIndex}] & {p.MultiByteMasks[i].KeepMaskStr}) | (b{i} & {p.MultiByteMasks[i].WriteMaskStr}));");
+            int currentByte = p.StartByte + i;
+            if (i == 0)
+            {
+                if (p.StartWriteMask == 0xFF)
+                    sb.AppendLine($"            _data[{currentByte}] = (byte)b{i};");
+                else
+                    sb.AppendLine($"            _data[{currentByte}] = (byte)((_data[{currentByte}] & {invStartMaskStr}) | (b{i} & {startMaskStr}));");
+            }
+            else if (i == p.ByteCount - 1)
+            {
+                if (p.EndWriteMask == 0xFF)
+                    sb.AppendLine($"            _data[{currentByte}] = (byte)b{i};");
+                else
+                    sb.AppendLine($"            _data[{currentByte}] = (byte)((_data[{currentByte}] & {invEndMaskStr}) | (b{i} & {endMaskStr}));");
+            }
+            else
+            {
+                sb.AppendLine($"            _data[{currentByte}] = (byte)b{i};");
+            }
         }
         sb.AppendLine("        }");
     }
 
     #endregion
 
-    private static string MaskBinary8(int bitWidth, int shift)
+    private static byte CalculateMask8(int bitWidth, int shift)
     {
         var mask = (1 << bitWidth) - 1;
         mask <<= shift;
-        string bin = Convert.ToString(mask & 0xFF, 2).PadLeft(8, '0');
-        return "0b" + bin.Insert(4, "_") + "u";
+        return (byte)(mask & 0xFF);
     }
 
-    static string ByteToString(byte b)
+    private static string ToBinaryString(byte value)
     {
-        return "0b" + Convert.ToString(b, 2).PadLeft(8, '0').Insert(4, "_") + "u";
-    }
-
-    private static string MaskBinary8Inverse(int bitWidth, int shift)
-    {
-        int mask = ((1 << bitWidth) - 1) << shift;
-        int inv = (~mask) & 0xFF;
-        string bin = Convert.ToString(inv, 2).PadLeft(8, '0');
+        string bin = Convert.ToString(value, 2).PadLeft(8, '0');
         return "0b" + bin.Insert(4, "_") + "u";
     }
 }
