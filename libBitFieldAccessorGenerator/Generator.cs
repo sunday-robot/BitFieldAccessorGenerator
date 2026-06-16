@@ -27,7 +27,8 @@ public static class Generator
         var sb = new StringBuilder();
 
         GenerateNameSpace(sb, namespaceName);
-        GenerateClassSummary(sb, isBigEndian, description, fieldDefinitions);
+        var totalBits = fieldDefinitions.Sum(f => f.width);
+        GenerateClassSummaryComment(sb, isBigEndian, description, totalBits);
         GenerateClassHeader(sb, className);
 
         int bitIndex = 0;
@@ -48,11 +49,10 @@ public static class Generator
         sb.AppendLine();
     }
 
-    static void GenerateClassSummary(StringBuilder sb, bool isBigEndian, string description, IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
+    static void GenerateClassSummaryComment(StringBuilder sb, bool isBigEndian, string description, int totalBits)
     {
-        var totalBits = fieldDefinitions.Sum(f => f.width);
         var endianStr = isBigEndian ? "big endian" : "little endian";
-        PrintSummery(sb, "", $"{totalBits} bits", endianStr, description);
+        GenerateSummaryComment(sb, "", $"{totalBits} bits", endianStr, description);
     }
 
     static void GenerateClassHeader(StringBuilder sb, string className)
@@ -72,7 +72,7 @@ public static class Generator
             return;
         }
 
-        GenerateFieldSummary(sb, bitIndex, fieldDefinition);
+        GenerateFieldSummaryComment(sb, bitIndex, fieldDefinition);
         sb.AppendLine($"    public {GetFieldType(fieldDefinition.width)} {fieldDefinition.name}");
         sb.AppendLine("    {");
 
@@ -92,9 +92,9 @@ public static class Generator
         sb.AppendLine($"    // reserved, offset:{bitIndex / 8}.{bitIndex % 8}, bitWidth:{fieldDefinition.width}");
     }
 
-    static void GenerateFieldSummary(StringBuilder sb, int bitIndex, (int width, string name, string description) fieldDefinition)
+    static void GenerateFieldSummaryComment(StringBuilder sb, int bitIndex, (int width, string name, string description) fieldDefinition)
     {
-        PrintSummery(sb, "    ", $"offset:{bitIndex / 8}.{bitIndex % 8}", $"bitWidth:{fieldDefinition.width}", fieldDefinition.description);
+        GenerateSummaryComment(sb, "    ", $"offset:{bitIndex / 8}.{bitIndex % 8}", $"bitWidth:{fieldDefinition.width}", fieldDefinition.description);
     }
 
     static string GetFieldType(int bitWidth)
@@ -107,7 +107,7 @@ public static class Generator
         };
     }
 
-    static void PrintSummery(StringBuilder sb, string indent, params string[] summaries)
+    static void GenerateSummaryComment(StringBuilder sb, string indent, params string[] summaries)
     {
         sb.AppendLine($"{indent}/// <summary>");
         foreach (var summary in summaries)
@@ -133,7 +133,7 @@ public static class Generator
                 BitOffsetInByte: bitOffsetInByte,
                 SingleWriteMask: MaskBinary8(bitWidth, bitOffsetInByte),
                 SingleKeepMask: MaskBinary8Inverse(bitWidth, bitOffsetInByte),
-                MultiByteMasks: Array.Empty<ByteMaskParams>(), RightShift: 0, ByteShifts: Array.Empty<int>()
+                MultiByteMasks: [], RightShift: 0, ByteShifts: []
             );
         }
 
@@ -190,7 +190,7 @@ public static class Generator
                 BitOffsetInByte: bitOffsetInByte,
                 SingleWriteMask: MaskBinary8(bitWidth, bitOffsetInByte),
                 SingleKeepMask: MaskBinary8Inverse(bitWidth, bitOffsetInByte),
-                MultiByteMasks: Array.Empty<ByteMaskParams>(), RightShift: 0, ByteShifts: Array.Empty<int>()
+                MultiByteMasks: [], RightShift: 0, ByteShifts: []
             );
         }
 

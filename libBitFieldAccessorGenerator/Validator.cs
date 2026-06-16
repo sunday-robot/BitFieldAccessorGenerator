@@ -2,6 +2,13 @@
 
 public static class Validator
 {
+    /// <summary>
+    /// 以下の検査を行う。<br/>
+    /// ・ビット幅が1～32の整数であること<br/>
+    /// ・合計ビット幅が8の倍数であること<br/>
+    /// </summary>
+    /// <param name="fieldDefinitions"></param>
+    /// <exception cref="BitFieldDefinitionErrorException"></exception>
     public static void Validate(IReadOnlyList<(int width, string name, string description)> fieldDefinitions)
     {
         var totalBitWidth = 0;
